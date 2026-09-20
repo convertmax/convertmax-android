@@ -13,6 +13,6 @@ Kotlin Android library starter for the native Convertmax mobile event SDK. Open 
 ./gradlew test
 ```
 
-Use the shared `convertmax_event/contracts/mobile-v1` fixtures for parity with iOS and server validation. This SDK does not manage Google Play billing or verified revenue.
+This SDK does not manage Google Play billing or verified revenue.
 
 Do not publish until the durable queue, per-message `202` response handling, gzip limits, lifecycle scheduling, privacy/data-safety documentation and contract parity tests are implemented.
