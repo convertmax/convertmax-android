@@ -24,4 +24,10 @@ class ConvertmaxTest {
         assertEquals(setOf("aaa", "bbb"), droppableMessageIds(202, body))
         assertNull(droppableMessageIds(200, "{}"))
     }
+
+    @Test fun gzipPayloadHasGzipMagic() {
+        val bytes = gzipBytes("convertmax".toByteArray())
+        assertEquals(0x1f, bytes[0].toInt() and 0xff)
+        assertEquals(0x8b, bytes[1].toInt() and 0xff)
+    }
 }

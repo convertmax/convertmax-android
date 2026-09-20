@@ -6,7 +6,7 @@ Kotlin Android library starter for the native Convertmax mobile event SDK. Open 
 
 1. Open this repository root in Android Studio (File → Open).
 2. Wait for Gradle sync, then run the `samples.android` run configuration on an emulator or device.
-3. Grant consent, then Identify / Track / Screen / Reset. Events are in-memory only until the durable queue ships; the write key is public and ingestion-only.
+3. Grant consent, then Identify / Track / Screen / Reset. Events are stored in SQLite and flushed as gzip `mobile-v1` batches when the app backgrounds. The write key is public and ingestion-only.
 
 ```bash
 ./gradlew :samples:android:assembleDebug
@@ -14,5 +14,3 @@ Kotlin Android library starter for the native Convertmax mobile event SDK. Open 
 ```
 
 This SDK does not manage Google Play billing or verified revenue.
-
-Do not publish until the durable queue, per-message `202` response handling, gzip limits, lifecycle scheduling, privacy/data-safety documentation and contract parity tests are implemented.
