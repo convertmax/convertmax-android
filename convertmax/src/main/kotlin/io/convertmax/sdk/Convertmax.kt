@@ -101,7 +101,7 @@ private class EventDb(context: Context) : SQLiteOpenHelper(context, "convertmax-
     }.getOrNull()
 }
 
-/** Enqueue-first API. Google Play billing and verified revenue stay out of this SDK. */
+/** Enqueue-first API. */
 class Convertmax private constructor(context: Context, private val configuration: Configuration) {
     private var consent = Consent.UNKNOWN
     private var anonymousId = UUID.randomUUID().toString()

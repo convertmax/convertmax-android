@@ -12,5 +12,3 @@ Kotlin Android library starter for the native Convertmax mobile event SDK. Open 
 ./gradlew :samples:android:assembleDebug
 ./gradlew test
 ```
-
-This SDK does not manage Google Play billing or verified revenue.
