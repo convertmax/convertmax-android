@@ -10,4 +10,5 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     testImplementation(kotlin("test"))
     testImplementation("org.mockito:mockito-core:5.14.2")
+    testImplementation("org.json:json:20240303")
 }
