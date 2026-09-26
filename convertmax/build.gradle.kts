@@ -1,6 +1,7 @@
 plugins { id("com.android.library"); kotlin("android") }
 
 android { namespace = "io.convertmax.sdk"; compileSdk = 35
+    version = "0.2.0"
     defaultConfig { minSdk = 23; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }

@@ -3,6 +3,7 @@ package io.convertmax.sdk
 import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.content.SharedPreferences
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.os.Bundle
@@ -18,12 +19,14 @@ enum class Consent { UNKNOWN, GRANTED, DENIED }
 enum class EventType { TRACK, IDENTIFY, SCREEN }
 
 data class Configuration(val writeKey: String, val appId: String, val environment: String = "production",
-                         val endpoint: String = "https://event.convertmax.io/v1/batch")
+                         val endpoint: String = "https://event.convertmax.io/v1/batch",
+                         val sessionTimeoutMs: Long = 30 * 60 * 1000L,
+                         val flushIntervalMs: Long = 30_000L)
 data class Event(val messageId: String = UUID.randomUUID().toString(), val type: EventType,
                  val event: String? = null, val name: String? = null, val timestamp: Long = System.currentTimeMillis(),
                  val anonymousId: String, val userId: String?, val properties: Map<String, String>, val appId: String,
                  val environment: String)
-data class DeliveryResult(val delivered: Int, val retained: Int, val attempts: Int)
+data class DeliveryResult(val delivered: Int, val retained: Int, val attempts: Int, val rejected: Int = 0)
 data class Diagnostics(val queued: Int, val dropped: Int)
 
 internal fun gzipBytes(bytes: ByteArray): ByteArray {
@@ -103,15 +106,25 @@ private class EventDb(context: Context) : SQLiteOpenHelper(context, "convertmax-
 
 /** Enqueue-first API. */
 class Convertmax private constructor(context: Context, private val configuration: Configuration) {
+    companion object { const val VERSION = "0.2.0"; fun create(context: Context, configuration: Configuration) = Convertmax(context.applicationContext, configuration) }
     private var consent = Consent.UNKNOWN
     private var anonymousId = UUID.randomUUID().toString()
     private var userId: String? = null
+    private var sessionId = UUID.randomUUID().toString()
+    private var lastActivity = 0L
+    private val prefs: SharedPreferences = context.applicationContext.getSharedPreferences("convertmax-${configuration.appId}-${configuration.environment}", Context.MODE_PRIVATE)
     private val db = (context.applicationContext as? Application)?.let { EventDb(it) }
     private val queue: MutableList<Event> = db?.load() ?: mutableListOf()
     private var dropped = 0
     private var startedActivities = 0
 
     init {
+        anonymousId = prefs.getString("anonymousId", anonymousId) ?: anonymousId
+        userId = prefs.getString("userId", null)
+        sessionId = prefs.getString("sessionId", sessionId) ?: sessionId
+        lastActivity = prefs.getLong("lastActivity", 0L)
+        consent = runCatching { Consent.valueOf(prefs.getString("consent", Consent.UNKNOWN.name)!!) }.getOrDefault(Consent.UNKNOWN)
+        if (consent != Consent.GRANTED) { queue.clear(); persist() }
         (context.applicationContext as? Application)?.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityStarted(activity: Activity) { startedActivities += 1 }
             override fun onActivityStopped(activity: Activity) {
@@ -126,13 +139,19 @@ class Convertmax private constructor(context: Context, private val configuration
         })
     }
 
-    fun setConsent(value: Consent) { consent = value; if (value != Consent.GRANTED) { anonymousId = UUID.randomUUID().toString(); userId = null } }
-    fun identify(id: String) { if (consent == Consent.GRANTED && id.isNotEmpty()) userId = id }
-    fun reset() { userId = null; anonymousId = UUID.randomUUID().toString() }
+    @Synchronized fun setConsent(value: Consent) { consent = value; if (value != Consent.GRANTED) { anonymousId = UUID.randomUUID().toString(); userId = null; sessionId = UUID.randomUUID().toString(); queue.clear() }; persist() }
+    @Synchronized fun identify(id: String): Event? { if (consent != Consent.GRANTED || id.isBlank()) return null; userId = id; persist(); return enqueue(event(EventType.IDENTIFY, null, null, emptyMap())) }
+    @Synchronized fun reset() { userId = null; anonymousId = UUID.randomUUID().toString(); sessionId = UUID.randomUUID().toString(); lastActivity = 0L; persist() }
     fun track(name: String, properties: Map<String, String> = emptyMap()): Event? =
         if (consent == Consent.GRANTED && name.isNotEmpty()) enqueue(event(EventType.TRACK, name, null, properties)) else null
     fun screen(name: String, properties: Map<String, String> = emptyMap()): Event? =
         if (consent == Consent.GRANTED && name.isNotEmpty()) enqueue(event(EventType.SCREEN, null, name, properties)) else null
+    fun revenue(transactionReference: String, amount: String? = null, currency: String? = null): Event? {
+        if (transactionReference.isBlank()) return null
+        val values = buildMap { put("transactionReference", transactionReference); amount?.let { put("amount", it) }; currency?.let { put("currency", it) } }
+        return track("purchase_observed", values)
+    }
+    fun handleDeepLink(uri: android.net.Uri): Map<String, String> = listOf("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "referrer").mapNotNull { key -> uri.getQueryParameter(key)?.takeIf { it.length <= 256 }?.let { key to it } }.toMap()
     fun diagnostics(): Diagnostics = Diagnostics(queue.size, dropped)
     fun flush(): List<Event> { val copy = queue.toList(); queue.clear(); persist(); return copy }
 
@@ -167,12 +186,12 @@ class Convertmax private constructor(context: Context, private val configuration
         return DeliveryResult(delivered, queue.size, attempts)
     }
 
-    private fun enqueue(event: Event): Event? {
+    @Synchronized private fun enqueue(event: Event): Event? {
         if (queue.size >= 1000) { dropped += 1; return null }
         queue.add(event); persist(); return event
     }
 
-    private fun persist() { db?.save(queue) }
+    private fun persist() { db?.save(queue); prefs.edit().putString("consent", consent.name).putString("anonymousId", anonymousId).putString("userId", userId).putString("sessionId", sessionId).putLong("lastActivity", lastActivity).apply() }
 
     private fun encodeBatch(batch: List<Event>): String {
         val events = JSONArray()
@@ -182,14 +201,17 @@ class Convertmax private constructor(context: Context, private val configuration
                 .put("timestamp", item.timestamp).put("anonymousId", item.anonymousId)
                 .put("userId", item.userId ?: JSONObject.NULL)
                 .put("properties", JSONObject(item.properties as Map<*, *>))
-                .put("context", JSONObject().put("appId", item.appId).put("environment", item.environment)))
+                .put("context", JSONObject().put("appId", item.appId).put("environment", item.environment)
+                    .put("sessionId", sessionId).put("sdkName", "convertmax-android").put("sdkVersion", VERSION)
+                    .put("platform", "android").put("osVersion", android.os.Build.VERSION.RELEASE)
+                    .put("deviceModel", android.os.Build.MODEL)))
         }
         return JSONObject().put("events", events).toString()
     }
 
     private fun event(type: EventType, event: String?, name: String?, properties: Map<String, String>) =
         Event(type = type, event = event, name = name, anonymousId = anonymousId, userId = userId,
-              properties = properties, appId = configuration.appId, environment = configuration.environment)
-
-    companion object { fun create(context: Context, configuration: Configuration) = Convertmax(context.applicationContext, configuration) }
+              properties = properties, appId = configuration.appId, environment = configuration.environment).also {
+            val now = System.currentTimeMillis(); if (now - lastActivity >= configuration.sessionTimeoutMs) sessionId = UUID.randomUUID().toString(); lastActivity = now
+        }
 }
