@@ -1,8 +1,8 @@
-# Convertmax Android SDK (0.2.0)
+# Convertmax Android SDK (0.3.0)
 
 Kotlin Android library starter for the native Convertmax mobile event SDK. Open this directory in Android Studio; the `:convertmax` library and `:samples:android` Compose app are in the same Gradle project.
 
-The release line is `0.2.0`; publish it from the consuming organization’s Maven repository configuration.
+The release line is `0.3.0`; publish it from the consuming organization’s Maven repository configuration.
 
 ## Install
 
