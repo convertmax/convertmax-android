@@ -141,7 +141,7 @@ private class EventDb(context: Context) : SQLiteOpenHelper(context, "convertmax-
 
 /** Enqueue-first API. */
 class Convertmax private constructor(context: Context, private val configuration: Configuration) {
-    companion object { const val VERSION = "0.2.0"; fun create(context: Context, configuration: Configuration) = Convertmax(context.applicationContext, configuration) }
+    companion object { const val VERSION = "0.3.0"; fun create(context: Context, configuration: Configuration) = Convertmax(context.applicationContext, configuration) }
     private var consent = Consent.UNKNOWN
     private var anonymousId = UUID.randomUUID().toString()
     private var userId: String? = null
